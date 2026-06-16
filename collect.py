@@ -555,6 +555,80 @@ def _extract_json_array(text):
 
 
 # ===========================================================================
+#  翻訳プロバイダの振り分け
+# ===========================================================================
+def enrich(items, cfg):
+    """provider に応じて翻訳・要約を実施。
+    google_free=無料(キー不要) / anthropic=高品質要約(要APIキー・有料) / off=なし"""
+    provider = cfg.get("translate", {}).get("provider", "google_free")
+    if provider == "off":
+        log("  [info] 翻訳はオフ（config.translate.provider=off）")
+        return
+    if provider == "anthropic":
+        ai_enrich(items, cfg)  # 有料・高品質要約
+        return
+    translate_free_enrich(items, cfg)  # 既定: 無料翻訳
+
+
+def translate_free_enrich(items, cfg):
+    """無料翻訳（Google無料エンドポイント→失敗時MyMemory）で英語記事を日本語化。
+    タイトルを title_ja に、要約スニペットを summary_ja に入れる（原題は title_orig に保持）。"""
+    tr = cfg.get("translate", {})
+    max_items = tr.get("max_items", 80)
+    do_summary = tr.get("translate_summary", True)
+    targets = [it for it in items if not has_japanese(it["title_orig"])][:max_items]
+    if not targets:
+        log("  [info] 翻訳対象の英語記事なし")
+        return
+    log(f"  [info] 無料翻訳: {len(targets)}件を処理（Google無料→MyMemoryフォールバック）")
+    cache, ok = {}, 0
+    for it in targets:
+        ja = _translate_cached(it["title_orig"], cache, cfg)
+        if ja:
+            it["title_ja"] = ja
+            ok += 1
+        if do_summary and it["summary"]:
+            sja = _translate_cached(it["summary"][:480], cache, cfg)
+            if sja:
+                it["summary_ja"] = sja
+        time.sleep(0.25)  # レート制限回避のため軽く間隔をあける
+    log(f"  [info] 翻訳成功: {ok}/{len(targets)} 件")
+
+
+def _translate_cached(text, cache, cfg):
+    text = (text or "").strip()
+    if not text:
+        return ""
+    if text in cache:
+        return cache[text]
+    out = _google_translate(text, cfg) or _mymemory_translate(text, cfg) or ""
+    cache[text] = out
+    return out
+
+
+def _google_translate(text, cfg):
+    """Google翻訳の無料エンドポイント（非公式・キー不要）。en/auto→ja。"""
+    try:
+        url = ("https://translate.googleapis.com/translate_a/single"
+               "?client=gtx&sl=auto&tl=ja&dt=t&q=" + urllib.parse.quote(text))
+        data = json.loads(http_get(url, cfg))
+        return "".join(seg[0] for seg in data[0] if seg and seg[0]).strip()
+    except Exception:
+        return ""
+
+
+def _mymemory_translate(text, cfg):
+    """MyMemory翻訳API（無料・キー不要・匿名1日5000語程度）。フォールバック用。"""
+    try:
+        url = ("https://api.mymemory.translated.net/get?langpair=en|ja&q="
+               + urllib.parse.quote(text[:480]))
+        data = json.loads(http_get(url, cfg))
+        return (data.get("responseData", {}).get("translatedText", "") or "").strip()
+    except Exception:
+        return ""
+
+
+# ===========================================================================
 #  並べ替え・重複排除
 # ===========================================================================
 def dedupe(items):
@@ -790,8 +864,8 @@ def main():
             it["theme"] = classify_theme(it, cfg["themes"])
 
     # 3) AI翻訳・要約（任意）
-    log("[3/5] AI翻訳・要約")
-    ai_enrich(items, cfg)
+    log("[3/5] 翻訳・要約")
+    enrich(items, cfg)
     # AIでthemeが付かなかったものを補完
     for it in items:
         if not it["theme"]:

@@ -129,6 +129,12 @@
     "max_version_only": 3,
     "exclude_kinds": ["公式リリース"]
   },
+  "translate": {
+    "provider": "google_free",
+    "translate_summary": true,
+    "max_items": 80,
+    "_note": "provider: google_free=無料(キー不要) / anthropic=高品質要約(要APIキー・有料) / off=翻訳なし"
+  },
   "ai": {
     "enabled": true,
     "model": "claude-haiku-4-5-20251001",
