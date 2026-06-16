@@ -30,6 +30,8 @@ if (-not (Test-Path $runBat)) {
 $action  = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$runBat`"" -WorkingDirectory $here
 $trigger = New-ScheduledTaskTrigger -Daily -At $Time
 $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -DontStopOnIdleEnd -ExecutionTimeLimit (New-TimeSpan -Minutes 30)
+$settings.DisallowStartIfOnBatteries = $false
+$settings.StopIfGoingOnBatteries = $false
 
 Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
   -Settings $settings -Description "Claude Code 最新情報を毎朝収集 (cc-radar)" -Force | Out-Null

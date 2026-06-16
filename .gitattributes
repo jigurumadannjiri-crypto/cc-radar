@@ -1,0 +1,8 @@
+# 改行コードを固定（クローン先でも .bat が壊れないように）
+* text=auto
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+*.py  text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.md  text eol=lf
