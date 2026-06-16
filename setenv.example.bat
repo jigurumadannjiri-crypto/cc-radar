@@ -17,5 +17,9 @@ rem --- Gmail notification (optional): 2-step verify -> issue an App Password --
 rem set CC_RADAR_GMAIL_USER=your_name@gmail.com
 rem set CC_RADAR_GMAIL_PASS=xxxxxxxxxxxxxxxx
 
+rem --- Extra recipients besides yourself (comma-separated). Keep work addresses
+rem     here / in a GitHub Secret, NOT in config.json (repo is public). ---
+rem set CC_RADAR_MAIL_TO=someone@example.com,another@example.com
+
 rem --- Corporate network with SSL interception only (home PC: leave disabled) ---
 rem set CC_RADAR_INSECURE_SSL=1

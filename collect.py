@@ -655,7 +655,19 @@ def send_email(recommended, items, cfg):
     if not em.get("enabled") or not user or not passwd:
         log("  [info] メール送信スキップ（CC_RADAR_GMAIL_USER/PASS未設定 or 無効）")
         return
-    to_addr = em.get("to") or user
+    # 宛先: 送信元(自分)を必ず含め、config.email.to と 環境変数 CC_RADAR_MAIL_TO を追加。
+    # ★追加宛先(会社アドレス等)は公開リポジトリに載せないよう Secret(CC_RADAR_MAIL_TO) 推奨。
+    to_cfg = em.get("to", [])
+    if isinstance(to_cfg, str):
+        cfg_list = [a.strip() for a in to_cfg.split(",") if a.strip()]
+    else:
+        cfg_list = [a for a in to_cfg if a]
+    env_list = [a.strip() for a in os.environ.get("CC_RADAR_MAIL_TO", "").split(",") if a.strip()]
+    recipients = []
+    for a in [user] + cfg_list + env_list:
+        if a and a not in recipients:
+            recipients.append(a)
+
     top_n = em.get("top_n", 5)
     today = dt.date.today().strftime("%Y-%m-%d")
     subject = f'{em.get("subject_prefix", "[cc-radar]")} Claude Code 最新情報 {today}'
@@ -664,7 +676,7 @@ def send_email(recommended, items, cfg):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = user
-    msg["To"] = to_addr
+    msg["To"] = ", ".join(recipients)
     msg.attach(MIMEText(_email_text(recommended[:top_n], cfg), "plain", "utf-8"))
     msg.attach(MIMEText(body, "html", "utf-8"))
 
@@ -673,8 +685,8 @@ def send_email(recommended, items, cfg):
         with smtplib.SMTP(em["smtp_host"], em["smtp_port"], timeout=30) as server:
             server.starttls(context=ctx)
             server.login(user, passwd)
-            server.sendmail(user, [to_addr], msg.as_string())
-        log(f"  [ok] メール送信完了 → {to_addr}")
+            server.sendmail(user, recipients, msg.as_string())
+        log(f"  [ok] メール送信完了 → {', '.join(recipients)}")
     except Exception as e:
         log(f"  [warn] メール送信失敗: {e}")
 
