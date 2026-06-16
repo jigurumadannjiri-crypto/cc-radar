@@ -38,6 +38,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}      # 任意：AI翻訳・要約
           CC_RADAR_GMAIL_USER: ${{ secrets.CC_RADAR_GMAIL_USER }}  # 任意：Gmail通知
           CC_RADAR_GMAIL_PASS: ${{ secrets.CC_RADAR_GMAIL_PASS }}  # 任意：アプリパスワード
+          CC_RADAR_MAIL_TO: ${{ secrets.CC_RADAR_MAIL_TO }}        # 任意：追加宛先（会社アドレス等）
         run: python collect.py
 
       # ↓ GitHub Pages 公開用（メールのみ運用なら、この2ステップと上の permissions/environment を削除）

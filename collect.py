@@ -686,7 +686,7 @@ def send_email(recommended, items, cfg):
             server.starttls(context=ctx)
             server.login(user, passwd)
             server.sendmail(user, recipients, msg.as_string())
-        log(f"  [ok] メール送信完了 → {', '.join(recipients)}")
+        log(f"  [ok] メール送信完了 → {len(recipients)}件の宛先: {', '.join(recipients)}")
     except Exception as e:
         log(f"  [warn] メール送信失敗: {e}")
 
