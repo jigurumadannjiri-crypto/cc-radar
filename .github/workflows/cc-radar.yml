@@ -1,0 +1,51 @@
+name: cc-radar daily
+
+# 毎朝7:30 JST（=22:30 UTC前日）に自動実行。手動実行(workflow_dispatch)も可。
+# ★PCの電源状態に依存せず、GitHubのクラウドで動きます。
+on:
+  schedule:
+    - cron: "30 22 * * *"
+  workflow_dispatch: {}
+
+# GitHub Pages へ公開するための権限（メールのみ運用なら下の deploy 2ステップごと削除可）
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: cc-radar
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    env:
+      TZ: Asia/Tokyo            # 日付・件名を日本時間で表示
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 収集・サイト生成・メール送信
+        env:
+          # 値は GitHub の Settings > Secrets and variables > Actions に登録（リポジトリには載らない）
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}      # 任意：AI翻訳・要約
+          CC_RADAR_GMAIL_USER: ${{ secrets.CC_RADAR_GMAIL_USER }}  # 任意：Gmail通知
+          CC_RADAR_GMAIL_PASS: ${{ secrets.CC_RADAR_GMAIL_PASS }}  # 任意：アプリパスワード
+        run: python collect.py
+
+      # ↓ GitHub Pages 公開用（メールのみ運用なら、この2ステップと上の permissions/environment を削除）
+      - name: Pages成果物をアップロード
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+      - name: GitHub Pagesへデプロイ
+        id: deploy
+        uses: actions/deploy-pages@v4
