@@ -1,6 +1,6 @@
 {
   "site_title": "cc-radar — Claude Code 最新情報レーダー",
-  "public_url": "https://YOUR_GITHUB_NAME.github.io/cc-radar/",
+  "public_url": "https://jigurumadannjiri-crypto.github.io/cc-radar/",
   "max_items_per_feed": 25,
   "recent_days_new": 7,
   "fetch": {
