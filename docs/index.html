@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>cc-radar — Claude Code 最新情報レーダー</title>
+<style>
+  :root{
+    --green:#00A08E; --green-d:#0A7A5C; --bg:#F1F8F6; --yellow:#FFC000;
+    --ink:#222; --sub:#667; --line:#d8e8e3; --read:#9aa;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#fff;color:var(--ink);
+    font-family:"Meiryo UI","Meiryo",sans-serif;line-height:1.6;}
+  a{color:var(--green-d);text-decoration:none}
+  a:hover{text-decoration:underline}
+  header{background:#fff;border-bottom:3px solid var(--yellow);
+    padding:14px 18px;position:sticky;top:0;z-index:10;}
+  header .bar{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+    max-width:980px;margin:auto;}
+  header h1{font-size:18px;margin:0;color:var(--green);}
+  header .meta{font-size:12px;color:var(--sub);}
+  .wrap{max-width:980px;margin:0 auto;padding:16px 18px 60px;}
+  .controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+    margin:14px 0;}
+  .controls input[type=search]{flex:1;min-width:180px;padding:8px 10px;
+    border:1px solid var(--line);border-radius:6px;font-size:14px;}
+  .controls select{padding:8px 10px;border:1px solid var(--line);
+    border-radius:6px;font-size:14px;background:#fff;}
+  .controls button{padding:8px 12px;border:1px solid var(--green);
+    background:#fff;color:var(--green);border-radius:6px;font-size:13px;
+    cursor:pointer;}
+  .controls button:hover{background:var(--bg);}
+  .sec-title{font-size:15px;font-weight:bold;color:var(--green-d);
+    margin:22px 0 8px;border-left:5px solid var(--green);padding-left:8px;}
+  .sec-title.reco{border-left-color:var(--yellow);}
+  .card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;
+    margin:0 0 10px;background:#fff;transition:opacity .15s;}
+  .card.reco{background:var(--bg);}
+  .card.read{opacity:.5;}
+  .card .top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    margin-bottom:4px;}
+  .badge{font-size:11px;font-weight:bold;color:#fff;padding:1px 8px;
+    border-radius:10px;white-space:nowrap;}
+  .badge.kind{background:var(--green);}
+  .badge.theme{background:var(--green-d);}
+  .badge.new{background:var(--yellow);color:#5a4500;}
+  .card .title{font-size:15px;font-weight:bold;color:var(--green-d);
+    display:block;margin:2px 0;word-break:break-word;}
+  .card .summary{font-size:13px;color:#444;margin:4px 0;}
+  .card .foot{display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+    font-size:12px;color:var(--sub);margin-top:6px;}
+  .card .read-btn{margin-left:auto;border:1px solid var(--line);
+    background:#fff;color:var(--sub);border-radius:5px;padding:3px 10px;
+    font-size:12px;cursor:pointer;}
+  .card .read-btn:hover{border-color:var(--green);color:var(--green);}
+  .check{color:var(--green);font-weight:bold;}
+  #more{display:block;margin:16px auto;padding:9px 22px;
+    border:1px solid var(--green);background:#fff;color:var(--green);
+    border-radius:6px;font-size:14px;cursor:pointer;}
+  #more:hover{background:var(--bg);}
+  .empty{color:var(--sub);padding:30px;text-align:center;}
+  @media(max-width:640px){
+    header h1{font-size:16px;}
+    .controls input[type=search]{min-width:140px;}
+    .controls select{flex:1;}
+  }
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <h1>📡 cc-radar — Claude Code 最新情報レーダー</h1>
+    <span class="meta" id="meta">読み込み中…</span>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="controls">
+    <input type="search" id="q" placeholder="キーワード検索（タイトル・要約・媒体）">
+    <select id="f-theme"><option value="">テーマ：すべて</option></select>
+    <select id="f-kind"><option value="">種類：すべて</option></select>
+    <select id="f-read">
+      <option value="">既読：すべて</option>
+      <option value="unread">未読のみ</option>
+      <option value="read">既読のみ</option>
+    </select>
+    <button id="mark-all">未読を一括既読</button>
+  </div>
+
+  <div id="reco-wrap">
+    <div class="sec-title reco">⭐ 今日のおすすめ</div>
+    <div id="reco"></div>
+  </div>
+
+  <div class="sec-title">すべての記事 <span id="all-count" style="font-weight:normal;color:var(--sub);font-size:13px;"></span></div>
+  <div id="list"></div>
+  <button id="more" style="display:none;">もっと見る</button>
+  <div id="empty" class="empty" style="display:none;">該当する記事がありません。</div>
+</div>
+
+<script>
+const PAGE = 50;
+let DATA = null, shown = 0, filtered = [];
+
+const LS_KEY = "cc-radar-read";
+function readSet(){ try{ return new Set(JSON.parse(localStorage.getItem(LS_KEY)||"[]")); }catch(e){ return new Set(); } }
+function saveRead(s){ localStorage.setItem(LS_KEY, JSON.stringify([...s])); }
+let READ = readSet();
+
+function isRead(u){ return READ.has(u); }
+function setRead(u, val){
+  if(val){ READ.add(u); } else { READ.delete(u); }
+  saveRead(READ);
+  // ★おすすめ枠と全部枠に同じURLが両方あるので、data-urlで全カードを同期
+  document.querySelectorAll('[data-url="'+CSS.escape(u)+'"]').forEach(card=>{
+    card.classList.toggle("read", val);
+    const btn = card.querySelector(".read-btn");
+    if(btn) btn.textContent = val ? "未読に戻す" : "既読にする";
+  });
+  updateMeta();
+}
+
+function relDate(iso){
+  if(!iso) return "日付不明";
+  const d = new Date(iso); if(isNaN(d)) return "日付不明";
+  const now = new Date();
+  const days = Math.floor((now - d)/86400000);
+  if(days <= 0) return "今日";
+  if(days === 1) return "昨日";
+  if(days < 7) return days + "日前";
+  return (d.getMonth()+1)+"/"+d.getDate();
+}
+
+function esc(s){ const d=document.createElement("div"); d.textContent=s==null?"":s; return d.innerHTML; }
+
+function cardHTML(it, reco){
+  const r = isRead(it.url);
+  const title = it.title_ja || it.title;
+  const summ = it.summary_ja || it.summary || "";
+  const themeColor = { "新機能・更新":"#00A08E","使い方・Tips":"#0A7A5C","事例・体験談":"#FFC000","周辺・エコシステム":"#0A7A5C","その他":"#7a8a86" }[it.theme] || "#0A7A5C";
+  let badges = '<span class="badge kind">'+esc(it.kind)+'</span>';
+  badges += '<span class="badge theme" style="background:'+themeColor+'">'+esc(it.theme)+'</span>';
+  if(it.is_new) badges += '<span class="badge new">NEW</span>';
+  const orig = (it.title_ja && it.title_orig && it.title_ja!==it.title_orig)
+      ? '<div style="font-size:11px;color:#99a;">'+esc(it.title_orig)+'</div>' : '';
+  return ''
+    + '<div class="card'+(reco?' reco':'')+(r?' read':'')+'" data-url="'+esc(it.url)+'">'
+    +   '<div class="top">'+badges+'</div>'
+    +   '<a class="title" href="'+esc(it.url)+'" target="_blank" rel="noopener" '
+    +       'onclick="setRead(this.closest(\'.card\').dataset.url,true)">'+esc(title)+'</a>'
+    +   orig
+    +   (summ ? '<div class="summary">'+esc(summ)+'</div>' : '')
+    +   '<div class="foot">'
+    +     '<span>'+relDate(it.published)+'</span>'
+    +     '<span>・'+esc(it.source_short||it.source)+(it.media?(' / '+esc(it.media)):'')+'</span>'
+    +     '<button class="read-btn" onclick="toggleRead(this)">'+(r?'未読に戻す':'既読にする')+'</button>'
+    +   '</div>'
+    + '</div>';
+}
+
+function toggleRead(btn){
+  const url = btn.closest(".card").dataset.url;
+  setRead(url, !isRead(url));
+}
+
+function applyFilter(){
+  const q = document.getElementById("q").value.trim().toLowerCase();
+  const ft = document.getElementById("f-theme").value;
+  const fk = document.getElementById("f-kind").value;
+  const fr = document.getElementById("f-read").value;
+  filtered = DATA.items.filter(it=>{
+    if(ft && it.theme !== ft) return false;
+    if(fk && it.kind !== fk) return false;
+    if(fr==="read" && !isRead(it.url)) return false;
+    if(fr==="unread" && isRead(it.url)) return false;
+    if(q){
+      const hay = ((it.title_ja||"")+" "+(it.title||"")+" "+(it.title_orig||"")+" "+(it.summary_ja||"")+" "+(it.summary||"")+" "+(it.media||"")+" "+(it.source||"")).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  shown = 0;
+  document.getElementById("list").innerHTML = "";
+  renderMore();
+}
+
+function renderMore(){
+  const list = document.getElementById("list");
+  const slice = filtered.slice(shown, shown+PAGE);
+  list.insertAdjacentHTML("beforeend", slice.map(it=>cardHTML(it,false)).join(""));
+  shown += slice.length;
+  document.getElementById("more").style.display = (shown < filtered.length) ? "block" : "none";
+  document.getElementById("empty").style.display = (filtered.length===0) ? "block" : "none";
+  document.getElementById("all-count").textContent = "（"+filtered.length+"件）";
+}
+
+function updateMeta(){
+  if(!DATA) return;
+  const unread = DATA.items.filter(it=>!isRead(it.url)).length;
+  const gen = new Date(DATA.generated_at);
+  const genStr = isNaN(gen)? "" : (gen.getMonth()+1)+"/"+gen.getDate()+" "+String(gen.getHours()).padStart(2,"0")+":"+String(gen.getMinutes()).padStart(2,"0");
+  document.getElementById("meta").textContent =
+    "最終更新 "+genStr+" ・ 全"+DATA.items.length+"件 ・ 未読"+unread+"件";
+}
+
+function fillSelect(id, values, label){
+  const sel = document.getElementById(id);
+  values.forEach(v=>{ const o=document.createElement("option"); o.value=v; o.textContent=v; sel.appendChild(o); });
+}
+
+function init(data){
+  DATA = data;
+  fillSelect("f-theme", data.themes||[]);
+  fillSelect("f-kind", data.kinds||[]);
+  // おすすめ
+  const recoUrls = new Set(data.recommended_urls||[]);
+  const recoItems = (data.recommended_urls||[]).map(u=>data.items.find(it=>it.url===u)).filter(Boolean);
+  const recoBox = document.getElementById("reco");
+  if(recoItems.length){
+    recoBox.innerHTML = recoItems.map(it=>cardHTML(it,true)).join("");
+  }else{
+    document.getElementById("reco-wrap").style.display="none";
+  }
+  updateMeta();
+  applyFilter();
+  ["q","f-theme","f-kind","f-read"].forEach(id=>{
+    document.getElementById(id).addEventListener("input", applyFilter);
+  });
+  document.getElementById("more").addEventListener("click", renderMore);
+  document.getElementById("mark-all").addEventListener("click", ()=>{
+    DATA.items.forEach(it=>READ.add(it.url));
+    saveRead(READ);
+    document.querySelectorAll(".card").forEach(c=>{
+      c.classList.add("read");
+      const b=c.querySelector(".read-btn"); if(b) b.textContent="未読に戻す";
+    });
+    updateMeta();
+  });
+}
+
+fetch("data.json?_="+Date.now())
+  .then(r=>r.json())
+  .then(init)
+  .catch(e=>{
+    document.getElementById("meta").textContent="data.json を読み込めませんでした";
+    document.getElementById("empty").style.display="block";
+    document.getElementById("empty").textContent="data.json を読み込めません。GitHub Pages公開後、またはローカルサーバ(python -m http.server)経由で開いてください。";
+  });
+</script>
+</body>
+</html>

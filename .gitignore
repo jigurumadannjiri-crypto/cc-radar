@@ -1,0 +1,11 @@
+# 認証情報（絶対に公開しない）
+setenv.bat
+
+# ローカル生成物・キャッシュ
+data/history.json
+__pycache__/
+*.pyc
+
+# OS
+Thumbs.db
+.DS_Store
