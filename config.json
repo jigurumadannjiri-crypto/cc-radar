@@ -126,7 +126,8 @@
     "total": 10,
     "from_new": 4,
     "from_tips": 4,
-    "max_version_only": 3
+    "max_version_only": 3,
+    "exclude_kinds": ["公式リリース"]
   },
   "ai": {
     "enabled": true,

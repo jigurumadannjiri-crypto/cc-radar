@@ -420,7 +420,10 @@ def pick_recommendations(items, cfg):
     from_tips = rc.get("from_tips", 4)
     max_ver = rc.get("max_version_only", 3)
 
-    by_score = sorted(items, key=lambda x: x["score"], reverse=True)
+    # おすすめ枠から除外するkind（既定: 公式リリース＝英語・長文のため）。一覧には残る。
+    exclude_kinds = set(rc.get("exclude_kinds", []))
+    pool_items = [x for x in items if x["kind"] not in exclude_kinds]
+    by_score = sorted(pool_items, key=lambda x: x["score"], reverse=True)
     chosen, chosen_urls = [], set()
     ver_count = [0]  # クロージャから更新するためリストで保持
 
