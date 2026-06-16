@@ -1,17 +1,21 @@
 @echo off
 rem ===========================================================================
-rem  cc-radar  認証情報テンプレート
-rem  使い方:  このファイルを setenv.bat にコピーして、値を自分のものに書き換える。
-rem           setenv.bat は .gitignore で除外されるので公開リポジトリに載らない。
+rem  cc-radar credentials template  (ASCII-only: .bat breaks if it has Japanese)
+rem  HOW TO USE:
+rem    1) copy this file to  setenv.bat
+rem    2) remove the leading "rem " ONLY on the lines you want to enable
+rem    3) fill in your real values
+rem  setenv.bat is gitignored (never committed / never published).
+rem  Full guide in Japanese: see README.md  ("認証情報" section).
+rem  If a line still starts with "rem ", that feature is auto-skipped (safe).
 rem ===========================================================================
 
-rem --- AI翻訳・要約（任意。無くても動く＝英語記事はタイトルで判断） ---
-set ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+rem --- AI translation/summary (optional): Japanese title + 200-char summary ---
+rem set ANTHROPIC_API_KEY=sk-ant-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-rem --- Gmail通知（任意。無ければメール送信スキップ） ---
-rem  ※ Googleアカウントで2段階認証を有効化 → 「アプリパスワード」を発行して貼る
-set CC_RADAR_GMAIL_USER=your_name@gmail.com
-set CC_RADAR_GMAIL_PASS=xxxxxxxxxxxxxxxx
+rem --- Gmail notification (optional): 2-step verify -> issue an App Password ---
+rem set CC_RADAR_GMAIL_USER=your_name@gmail.com
+rem set CC_RADAR_GMAIL_PASS=xxxxxxxxxxxxxxxx
 
-rem --- 社内ネット等で証明書がプロキシ差し替えされる環境のみ 1 にする（自宅は不要） ---
+rem --- Corporate network with SSL interception only (home PC: leave disabled) ---
 rem set CC_RADAR_INSECURE_SSL=1
