@@ -1,6 +1,9 @@
 # 認証情報（絶対に公開しない）
 setenv.bat
 
+# ローカル専用の引き継ぎメモ（公開リポジトリに載せない）
+HANDOFF.md
+
 # ローカル生成物・キャッシュ
 data/history.json
 __pycache__/
