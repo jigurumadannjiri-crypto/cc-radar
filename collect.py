@@ -751,7 +751,7 @@ def send_email(recommended, items, cfg):
     msg["Subject"] = subject
     msg["From"] = user
     msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(_email_text(recommended[:top_n], cfg), "plain", "utf-8"))
+    msg.attach(MIMEText(_email_text(recommended[:top_n], items, cfg), "plain", "utf-8"))
     msg.attach(MIMEText(body, "html", "utf-8"))
 
     try:
@@ -774,13 +774,50 @@ THEME_COLOR = {
 }
 
 
-def _email_text(recommended, cfg):
-    lines = ["Claude Code 最新情報 (cc-radar)", ""]
+def email_reldate(iso):
+    p = parse_iso(iso)
+    if p is None:
+        return ""
+    now = dt.datetime.now(dt.timezone.utc)
+    days = (now - p.astimezone(dt.timezone.utc)).days
+    if days <= 0:
+        return "今日"
+    if days == 1:
+        return "昨日"
+    if days < 7:
+        return f"{days}日前"
+    loc = p.astimezone()
+    return f"{loc.month}/{loc.day}"
+
+
+def _category_groups(recommended, items, cfg):
+    """TOP5に出した記事を除き、テーマ別にまとめる。(theme, total件数, 表示分リスト) のリストを返す。"""
+    shown = {it["url"] for it in recommended}
+    per_max = cfg.get("email", {}).get("per_theme_max", 8)
+    groups = []
+    for theme in cfg["themes"].keys():
+        bucket = [it for it in items if it["theme"] == theme and it["url"] not in shown]
+        if bucket:
+            groups.append((theme, len(bucket), bucket[:per_max]))
+    return groups
+
+
+def _email_text(recommended, items, cfg):
+    lines = ["Claude Code 最新情報 (cc-radar)", "", "■ 本日のおすすめ"]
     for i, it in enumerate(recommended, 1):
         lines.append(f"{i}. [{it['theme']}] {display_title(it)}")
         lines.append(f"   {it['url']}")
+    if cfg.get("email", {}).get("include_categories", True):
+        for theme, total, lst in _category_groups(recommended, items, cfg):
+            lines.append("")
+            lines.append(f"■ {theme}（全{total}件）")
+            for it in lst:
+                d = email_reldate(it["published"])
+                meta = " ".join(x for x in [it["source_short"], d] if x)
+                lines.append(f"・{display_title(it)}（{meta}）")
+                lines.append(f"   {it['url']}")
     lines.append("")
-    lines.append(f"一覧: {cfg['public_url']}")
+    lines.append(f"すべての記事: {cfg['public_url']}")
     return "\n".join(lines)
 
 
@@ -796,6 +833,30 @@ def _email_html(recommended, items, cfg):
             f'<div style="font-size:13px;color:#444;margin-top:4px;">{summ}</div>'
             f"</div>"
         )
+
+    cats = ""
+    if cfg.get("email", {}).get("include_categories", True):
+        blocks = []
+        for theme, total, lst in _category_groups(recommended, items, cfg):
+            color = THEME_COLOR.get(theme, "#0A7A5C")
+            rows = []
+            for it in lst:
+                d = email_reldate(it["published"])
+                meta = " ・ ".join(x for x in [html.escape(it["source_short"]), html.escape(d)] if x)
+                rows.append(
+                    f'<li style="margin:0 0 7px;">'
+                    f'<a href="{html.escape(it["url"])}" style="color:#0A7A5C;text-decoration:none;font-size:14px;">{html.escape(display_title(it))}</a>'
+                    f'<span style="color:#888;font-size:12px;"> ・ {meta}</span>'
+                    f"</li>"
+                )
+            blocks.append(
+                f'<h3 style="color:{color};font-size:15px;margin:20px 0 8px;border-left:4px solid {color};padding-left:8px;">'
+                f'{html.escape(theme)} <span style="color:#999;font-weight:normal;font-size:12px;">（全{total}件）</span></h3>'
+                f'<ul style="margin:0;padding-left:18px;">{"".join(rows)}</ul>'
+            )
+        if blocks:
+            cats = '<h2 style="color:#0A7A5C;font-size:17px;border-bottom:1px solid #d8e8e3;padding-bottom:4px;margin-top:26px;">テーマ別の一覧</h2>' + "".join(blocks)
+
     btn = (
         f'<a href="{html.escape(cfg["public_url"])}" '
         f'style="display:inline-block;background:#00A08E;color:#fff;padding:10px 20px;'
@@ -804,9 +865,10 @@ def _email_html(recommended, items, cfg):
     return (
         f'<div style="font-family:Meiryo,sans-serif;max-width:640px;margin:auto;color:#222;">'
         f'<h2 style="color:#00A08E;border-bottom:2px solid #FFC000;padding-bottom:6px;">Claude Code 最新情報</h2>'
-        f'<p style="color:#666;font-size:13px;">本日のおすすめTOP{len(recommended)}（全{len(items)}件収集）</p>'
+        f'<p style="color:#666;font-size:13px;">本日のおすすめTOP{len(recommended)}＋テーマ別一覧（全{len(items)}件収集）</p>'
         + "".join(cards)
-        + f'<div style="margin-top:18px;text-align:center;">{btn}</div>'
+        + cats
+        + f'<div style="margin-top:22px;text-align:center;">{btn}</div>'
         + '<p style="color:#999;font-size:11px;margin-top:20px;">— cc-radar 自動配信</p>'
         + "</div>"
     )

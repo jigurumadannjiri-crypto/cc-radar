@@ -150,6 +150,8 @@
     "smtp_port": 587,
     "to": "",
     "subject_prefix": "[cc-radar]",
-    "top_n": 5
+    "top_n": 5,
+    "include_categories": true,
+    "per_theme_max": 8
   }
 }
