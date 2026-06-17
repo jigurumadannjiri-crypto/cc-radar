@@ -1,10 +1,12 @@
 name: cc-radar daily
 
-# 毎朝7:30 JST（=22:30 UTC前日）に自動実行。手動実行(workflow_dispatch)も可。
+# 毎朝7:47 JST（=22:47 UTC前日）に自動実行。手動実行(workflow_dispatch)も可。
+# ★GitHub無料cronは「正時・30分」が混雑し遅延/スキップしやすいため、混雑帯を外した分(:47)に設定。
+#   それでも数分〜数十分の遅延は起こりうる（GitHub側の仕様）。確実な時刻が要る場合は手元PCのタスク併用を検討。
 # ★PCの電源状態に依存せず、GitHubのクラウドで動きます。
 on:
   schedule:
-    - cron: "30 22 * * *"
+    - cron: "47 22 * * *"
   workflow_dispatch: {}
 
 # GitHub Pages へ公開するための権限（メールのみ運用なら下の deploy 2ステップごと削除可）
