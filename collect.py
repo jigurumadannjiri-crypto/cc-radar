@@ -8,7 +8,8 @@ Claude Code の最新情報を毎朝自動収集し、
 を生成する。標準ライブラリのみで動作（pip不要）。
 
 起動引数:
-    python collect.py              # 全実行（収集→HTML/JSON生成→メール送信）
+    python collect.py              # 全実行（収集→HTML/JSON生成→メール送信）。本日送信済みならメールはスキップ
+    python collect.py --force-mail # 本日送信済みでも再送する（手動実行・workflow_dispatch用）
     python collect.py --no-mail    # メール送信なし（HTML/JSONのみ）
     python collect.py --dry-run    # 収集して結果を表示するだけ（ファイル出力なし）
 
@@ -48,6 +49,10 @@ CONFIG_PATH = os.path.join(HERE, "config.json")
 DOCS_DIR = os.path.join(HERE, "docs")
 DATA_DIR = os.path.join(HERE, "data")
 HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
+# 「本日もう送ったか」を記録する重複防止マーカー（gitに追跡させ、クラウドの複数回起動で共有）。
+# ★多重cron（朝に4回発火）でも実際に送るのは1日1回だけにするための要。
+STATE_DIR = os.path.join(HERE, "state")
+LAST_SENT_PATH = os.path.join(STATE_DIR, "last_sent.txt")
 
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 
@@ -722,12 +727,37 @@ def render_html(cfg):
 # ===========================================================================
 #  メール送信（任意。Gmail SMTP / STARTTLS / 587）
 # ===========================================================================
-def send_email(recommended, items, cfg):
+def jst_today_str():
+    """JST(日本時間)の今日の日付 YYYY-MM-DD。マーカーの基準はJSTで統一。"""
+    return (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=9)).strftime("%Y-%m-%d")
+
+
+def already_sent_today():
+    """重複防止マーカーが本日(JST)になっているか。読めなければ未送信扱い。"""
+    try:
+        with open(LAST_SENT_PATH, encoding="utf-8") as f:
+            return f.read().strip() == jst_today_str()
+    except Exception:
+        return False
+
+
+def mark_sent_today():
+    """送信成功後に本日(JST)を刻む。クラウドではこの後ワークフローがcommit/pushして共有する。"""
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(LAST_SENT_PATH, "w", encoding="utf-8") as f:
+        f.write(jst_today_str() + "\n")
+
+
+def send_email(recommended, items, cfg, force=False):
     em = cfg.get("email", {})
     user = os.environ.get("CC_RADAR_GMAIL_USER")
     passwd = os.environ.get("CC_RADAR_GMAIL_PASS")
     if not em.get("enabled") or not user or not passwd:
         log("  [info] メール送信スキップ（CC_RADAR_GMAIL_USER/PASS未設定 or 無効）")
+        return
+    # ★多重cron対策: 本日すでに送信済みなら送らない（force=手動実行時のみ無視して再送）。
+    if not force and already_sent_today():
+        log(f"  [info] 本日({jst_today_str()})は送信済みのためスキップ（多重cronの重複防止）")
         return
     # 宛先: 送信元(自分)を必ず含め、config.email.to と 環境変数 CC_RADAR_MAIL_TO を追加。
     # ★追加宛先(会社アドレス等)は公開リポジトリに載せないよう Secret(CC_RADAR_MAIL_TO) 推奨。
@@ -761,6 +791,7 @@ def send_email(recommended, items, cfg):
             server.login(user, passwd)
             server.sendmail(user, recipients, msg.as_string())
         log(f"  [ok] メール送信完了 → {len(recipients)}件の宛先: {', '.join(recipients)}")
+        mark_sent_today()  # ★成功時のみマーカーを刻む（同日2通目以降を抑止）
     except Exception as e:
         log(f"  [warn] メール送信失敗: {e}")
 
@@ -902,6 +933,7 @@ def main():
     args = set(sys.argv[1:])
     dry_run = "--dry-run" in args
     no_mail = "--no-mail" in args or dry_run
+    force_mail = "--force-mail" in args  # 手動実行時: 本日送信済みでも再送する
 
     log("=" * 60)
     log("cc-radar : Claude Code 最新情報を収集します")
@@ -954,7 +986,7 @@ def main():
     log("[5/5] HTML/JSON生成" + ("" if no_mail else " ＋ メール送信"))
     write_outputs(items, recommended, cfg)
     if not no_mail:
-        send_email(recommended, items, cfg)
+        send_email(recommended, items, cfg, force=force_mail)
 
     log("-" * 60)
     log(f"完了。公開URL: {cfg['public_url']}")
