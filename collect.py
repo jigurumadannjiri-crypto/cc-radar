@@ -755,8 +755,17 @@ def send_email(recommended, items, cfg, force=False):
     if not em.get("enabled") or not user or not passwd:
         log("  [info] メール送信スキップ（CC_RADAR_GMAIL_USER/PASS未設定 or 無効）")
         return
-    # ★多重cron対策: 本日すでに送信済みなら送らない（force=手動実行時のみ無視して再送）。
-    if not force and already_sent_today():
+    # ★多重cron対策（atomic claim方式）:
+    #   CIでは workflow の「本日の送信権を取得」ステップが、git push の成否で“本日の送信担当”を
+    #   ただ1回だけに確定し、その結果を環境変数 CC_RADAR_SEND(yes/no/force) で渡す。ここでは従うだけ。
+    #   （複数cronが同時に束ねて発火しても、push に成功した1回しか yes にならないのでレースで二重送信しない）
+    #   環境変数が無い場合（ローカル実行）は従来のファイルマーカー方式で判定する。
+    send_env = os.environ.get("CC_RADAR_SEND")
+    if send_env is not None:
+        if send_env.strip().lower() not in ("yes", "force"):
+            log(f"  [info] この回は本日の送信担当ではないためスキップ（CC_RADAR_SEND={send_env}）")
+            return
+    elif not force and already_sent_today():
         log(f"  [info] 本日({jst_today_str()})は送信済みのためスキップ（多重cronの重複防止）")
         return
     # 宛先: 送信元(自分)を必ず含め、config.email.to と 環境変数 CC_RADAR_MAIL_TO を追加。
@@ -791,7 +800,10 @@ def send_email(recommended, items, cfg, force=False):
             server.login(user, passwd)
             server.sendmail(user, recipients, msg.as_string())
         log(f"  [ok] メール送信完了 → {len(recipients)}件の宛先: {', '.join(recipients)}")
-        mark_sent_today()  # ★成功時のみマーカーを刻む（同日2通目以降を抑止）
+        # CIでは workflow が送信権取得時に既にマーカーをpush済み → ここでは触らない。
+        # ローカル実行（CC_RADAR_SEND 環境変数なし）のときだけ従来どおりマーカーを刻む。
+        if os.environ.get("CC_RADAR_SEND") is None:
+            mark_sent_today()  # ★成功時のみマーカーを刻む（同日2通目以降を抑止）
     except Exception as e:
         log(f"  [warn] メール送信失敗: {e}")
 

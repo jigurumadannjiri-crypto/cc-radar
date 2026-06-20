@@ -2,8 +2,11 @@ name: cc-radar daily
 
 # 毎朝、7:00前後に受信箱へ届くことを狙って自動実行。手動実行(workflow_dispatch)も可。
 # ★【多重cron＝信頼性対策】GitHub無料cronは1回だと遅延/スキップで飛ぶことがある(2026-06-18に実際に全スキップ)。
-#   そこで朝に4回(6:35/6:50/7:10/7:25 JST)発火させ、最初に成功した1回だけメール送信する。
-#   2通目以降は collect.py が state/last_sent.txt を見て自動スキップ(1日1通保証)。
+#   そこで朝に4回(6:35/6:50/7:10/7:25 JST)発火させ、どれか1回でも回れば届くようにする。
+# ★【二重送信対策＝atomic claim】GitHubは遅延cronを束ねて“ほぼ同時”に発火させることがあり、
+#   「送信→後でマーカー記録」順だと記録前に起動した2回目も送ってしまう(2026-06-19に実際2通)。
+#   対策: メール送信の前に「本日の送信権」を git push で先取りする。git push は同時実行でも1回しか
+#   成功しない(2番目は非fast-forwardで弾かれる)ので、push に勝った1回だけが送信＝確実に1日1通。
 # ★「正時(:00)・30分(:30)」はGitHub側が最も混雑し飛びやすいので、その帯は避けた分(:35/:50/:10/:25)にしている。
 # ★PCの電源状態に依存せず、GitHubのクラウドで動く(手元PCは不要)。
 # 注: cronはUTC。JST=UTC+9なので「6:35 JST = 21:35 UTC前日」。
@@ -41,41 +44,68 @@ jobs:
         with:
           python-version: "3.12"
 
+      # ★本日の送信権を git push で先取り（atomic claim）。push に勝った1回だけが send=yes になる。
+      #   手動(workflow_dispatch)は send=force（必ず送る）＋当日マーカーも立てて自動の重複を抑止。
+      - name: 本日の送信権を取得（二重送信防止）
+        id: claim
+        run: |
+          git config user.name "cc-radar-bot"
+          git config user.email "jigurumadannjiri-crypto@users.noreply.github.com"
+          git pull --rebase --autostash origin main || true
+          TODAY="$(TZ=Asia/Tokyo date +%F)"
+          CUR="$(tr -d '[:space:]' < state/last_sent.txt 2>/dev/null || true)"
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手動: 必ず送る。ついでにマーカーを当日にして、同日の自動が重ねて送らないようにする。
+            echo "$TODAY" > state/last_sent.txt
+            git add state/last_sent.txt
+            git commit -m "chore: 送信権(手動) [skip ci]" || true
+            git pull --rebase --autostash origin main || true
+            git push || true
+            echo "手動実行 → send=force"
+            echo "send=force" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$CUR" = "$TODAY" ]; then
+            echo "本日は既に送信権が取得済み → この回は送らない"
+            echo "send=no" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$TODAY" > state/last_sent.txt
+          git add state/last_sent.txt
+          git commit -m "chore: 本日の送信権を取得 [skip ci]"
+          if git push; then
+            echo "送信権を獲得（この回が本日の送信担当） → send=yes"
+            echo "send=yes" >> "$GITHUB_OUTPUT"
+          else
+            echo "競合：他の起動が先に送信権を取得 → この回は送らない"
+            git pull --rebase --autostash origin main || true
+            echo "send=no" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 送信担当でない回(send=no)は、ここで終了（収集もサイト再生成もデプロイもしない＝無駄打ち回避）。
       - name: 収集・サイト生成・メール送信
+        if: steps.claim.outputs.send != 'no'
         env:
           # 値は GitHub の Settings > Secrets and variables > Actions に登録（リポジトリには載らない）
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}      # 任意：AI翻訳・要約
           CC_RADAR_GMAIL_USER: ${{ secrets.CC_RADAR_GMAIL_USER }}  # 任意：Gmail通知
           CC_RADAR_GMAIL_PASS: ${{ secrets.CC_RADAR_GMAIL_PASS }}  # 任意：アプリパスワード
           CC_RADAR_MAIL_TO: ${{ secrets.CC_RADAR_MAIL_TO }}        # 任意：追加宛先（会社アドレス等）
-        # 自動(schedule)は重複防止あり＝1日1通。手動(workflow_dispatch)は --force-mail で必ず再送。
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            python collect.py --force-mail
-          else
-            python collect.py
-          fi
-
-      - name: 送信マーカーをコミット（多重cronの重複防止の状態を次回起動と共有）
-        run: |
-          git config user.name "cc-radar-bot"
-          git config user.email "jigurumadannjiri-crypto@users.noreply.github.com"
-          git add state/last_sent.txt
-          if git diff --cached --quiet; then
-            echo "送信マーカーに変化なし（本日は別の起動が既に送信済み、またはメール未設定）→ コミット不要"
-          else
-            git commit -m "chore: 送信マーカー更新（本日送信済み） [skip ci]"
-            git pull --rebase --autostash origin main || true
-            git push
-            echo "送信マーカーをpush（本日この回が初送信）"
-          fi
+          CC_RADAR_SEND: ${{ steps.claim.outputs.send }}           # yes=送る / force=手動で必ず送る
+        run: python collect.py
 
       # ↓ GitHub Pages 公開用（メールのみ運用なら、この2ステップと上の permissions/environment を削除）
+      #   送信担当でない回(send=no)はサイト生成もしていないのでデプロイしない。
       - name: Pages成果物をアップロード
+        if: steps.claim.outputs.send != 'no'
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
       - name: GitHub Pagesへデプロイ
+        if: steps.claim.outputs.send != 'no'
         id: deploy
         uses: actions/deploy-pages@v4
