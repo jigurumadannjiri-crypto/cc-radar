@@ -99,7 +99,7 @@
     },
     "使い方・Tips": {
       "keywords": ["how to", "tips", "guide", "tutorial", "workflow", "best practice", "getting started", "subagent", "slash command", "mcp", "hook", "claude.md", "prompt", "使い方", "活用", "入門", "使いこな", "ワークフロー", "効率化", "テクニック", "設定", "コツ", "やってみ"],
-      "score": 4
+      "score": 5
     },
     "事例・体験談": {
       "keywords": ["case study", "we built", "we use", "my experience", "lessons", "review", "in production", "事例", "体験", "導入事例", "使ってみた", "レビュー", "感想", "実践", "現場"],
@@ -124,9 +124,9 @@
   },
   "recommend": {
     "total": 10,
-    "from_new": 4,
-    "from_tips": 4,
-    "max_version_only": 3,
+    "from_new": 2,
+    "from_tips": 6,
+    "max_version_only": 1,
     "exclude_kinds": ["公式リリース"]
   },
   "translate": {
@@ -152,6 +152,9 @@
     "subject_prefix": "[cc-radar]",
     "top_n": 5,
     "include_categories": true,
-    "per_theme_max": 8
+    "per_theme_max": 8,
+    "category_themes": ["使い方・Tips", "事例・体験談", "新機能・更新"],
+    "exclude_kinds": ["公式リリース"],
+    "_note_focus": "メールは『効果的な使い方』中心。category_themes=メールに出すテーマ(この順)。exclude_kinds=メールのカテゴリから外す種別(バージョンだけの公式リリース等)。収集・サイトは全件のまま。"
   }
 }

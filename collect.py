@@ -834,12 +834,22 @@ def email_reldate(iso):
 
 
 def _category_groups(recommended, items, cfg):
-    """TOP5に出した記事を除き、テーマ別にまとめる。(theme, total件数, 表示分リスト) のリストを返す。"""
+    """TOP5に出した記事を除き、テーマ別にまとめる。(theme, total件数, 表示分リスト) のリストを返す。
+    email.category_themes が指定されていればそのテーマだけ・その順で出す（『使い方』中心の絞り込み）。
+    email.exclude_kinds の種別（バージョンだけの公式リリース等）はメール一覧から除外する。"""
     shown = {it["url"] for it in recommended}
-    per_max = cfg.get("email", {}).get("per_theme_max", 8)
+    em = cfg.get("email", {})
+    per_max = em.get("per_theme_max", 8)
+    only_themes = em.get("category_themes") or list(cfg["themes"].keys())
+    skip_kinds = set(em.get("exclude_kinds", []))
     groups = []
-    for theme in cfg["themes"].keys():
-        bucket = [it for it in items if it["theme"] == theme and it["url"] not in shown]
+    for theme in only_themes:
+        if theme not in cfg["themes"]:
+            continue
+        bucket = [it for it in items
+                  if it["theme"] == theme
+                  and it["url"] not in shown
+                  and it["kind"] not in skip_kinds]
         if bucket:
             groups.append((theme, len(bucket), bucket[:per_max]))
     return groups
