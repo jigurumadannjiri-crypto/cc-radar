@@ -340,6 +340,7 @@ def fetch_qiita(src, cfg):
         likes = it.get("likes_count")
         if likes is not None:
             item["media"] = f"Qiita ♥{likes}"
+            item["score_ext"] = likes   # いいね数を人気度として役立ち度スコアに反映
         items.append(item)
     return items
 
@@ -916,6 +917,11 @@ def _category_groups(recommended, items, cfg):
     per_max = em.get("per_theme_max", 8)
     only_themes = em.get("category_themes") or list(cfg["themes"].keys())
     skip_kinds = set(em.get("exclude_kinds", []))
+    def usefulness_key(it):
+        # 役立ち度(score)を最優先、同点は新しい順。
+        p = parse_iso(it.get("published"))
+        return (it.get("score", 0), 1 if p else 0, p.timestamp() if p else 0)
+
     groups = []
     for theme in only_themes:
         if theme not in cfg["themes"]:
@@ -925,6 +931,8 @@ def _category_groups(recommended, items, cfg):
                   and it["url"] not in shown
                   and it["kind"] not in skip_kinds]
         if bucket:
+            # ★メールのカテゴリ一覧は「役に立ちそうな順」に並べる（日付順ではなくscore順）。
+            bucket.sort(key=usefulness_key, reverse=True)
             groups.append((theme, len(bucket), bucket[:per_max]))
     return groups
 
