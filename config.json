@@ -55,6 +55,34 @@
       "enabled": true
     },
     {
+      "id": "qiita",
+      "name": "Qiita",
+      "short_name": "Qiita",
+      "kind": "記事・ブログ",
+      "type": "qiita",
+      "url": "https://qiita.com/api/v2/items?query=Claude%20Code&per_page=25",
+      "enabled": true
+    },
+    {
+      "id": "zenn",
+      "name": "Zenn（Claude Codeトピック）",
+      "short_name": "Zenn",
+      "kind": "記事・ブログ",
+      "type": "rss",
+      "url": "https://zenn.dev/topics/claudecode/feed",
+      "enabled": true
+    },
+    {
+      "id": "note",
+      "name": "note 検索",
+      "short_name": "note",
+      "kind": "記事・ブログ",
+      "type": "note",
+      "url": "https://note.com/api/v3/searches?context=note&q=Claude%20Code&size=20&start=0",
+      "enabled": true,
+      "note": "非公式検索API。取得失敗時は自動スキップ。"
+    },
+    {
       "id": "reddit",
       "name": "Reddit r/ClaudeAI",
       "short_name": "Reddit",

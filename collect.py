@@ -323,14 +323,62 @@ def fetch_rsshub(src, cfg):
     return fetch_googlenews(src, cfg)
 
 
+def fetch_qiita(src, cfg):
+    """Qiita API v2 の全文検索（JSON配列）。日本語の活用術記事を直接取得する。
+    src['url'] 例: https://qiita.com/api/v2/items?query=Claude%20Code&per_page=25
+    ※未認証は60req/h。失敗時は collect_all がスキップ。"""
+    items = []
+    data = json.loads(http_get(src["url"], cfg))
+    if not isinstance(data, list):
+        return items
+    for it in data:
+        title = it.get("title", "")
+        link = it.get("url", "")
+        pub = parse_iso(it.get("created_at"))
+        summary = strip_html(it.get("rendered_body", "") or it.get("body", ""))[:600]
+        item = _mk_item(src, title, link, pub, summary)
+        likes = it.get("likes_count")
+        if likes is not None:
+            item["media"] = f"Qiita ♥{likes}"
+        items.append(item)
+    return items
+
+
+def fetch_note(src, cfg):
+    """note の検索API(v3, JSON)。日本語の活用術記事を直接取得する。
+    src['url'] 例: https://note.com/api/v3/searches?context=note&q=Claude%20Code&size=20&start=0
+    ※非公式APIのため構造変化に備えて防御的に読む。読めなければ0件（=スキップ扱い）。"""
+    items = []
+    data = json.loads(http_get(src["url"], cfg))
+    notes = (((data or {}).get("data") or {}).get("notes") or {}).get("contents")
+    if not isinstance(notes, list):
+        return items
+    for n in notes:
+        title = n.get("name") or n.get("title") or ""
+        key = n.get("key") or ""
+        urlname = (n.get("user") or {}).get("urlname") or ""
+        link = n.get("note_url") or (f"https://note.com/{urlname}/n/{key}" if urlname and key else "")
+        if not link:
+            continue
+        pub = parse_iso(n.get("publish_at") or n.get("publishAt") or "")
+        summary = strip_html(n.get("body") or n.get("description") or "")[:600]
+        item = _mk_item(src, title, link, pub, summary)
+        item["media"] = "note"
+        items.append(item)
+    return items
+
+
 FETCHERS = {
     "atom": fetch_atom,
     "changelog": fetch_changelog,
     "googlenews": fetch_googlenews,
+    "rss": fetch_googlenews,          # 汎用RSS2.0（Zennトピックフィード等）
     "reddit": fetch_reddit,
     "hn": fetch_hn,
     "youtube": fetch_youtube,
     "rsshub": fetch_rsshub,
+    "qiita": fetch_qiita,
+    "note": fetch_note,
 }
 
 
