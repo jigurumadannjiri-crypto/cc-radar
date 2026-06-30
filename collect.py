@@ -368,6 +368,24 @@ def fetch_note(src, cfg):
     return items
 
 
+def fetch_hatena(src, cfg):
+    """はてなブックマークの検索フィード(RSS1.0/RDF)。サイトを問わず日本語の技術記事を横断的に拾う
+    （Qiita/Zenn/noteに限らず、個人ブログ・企業テックブログ等もまとめて集約される）。
+    src['url'] 例: https://b.hatena.ne.jp/search/text?q=Claude%20Code&mode=rss&sort=recent&users=1"""
+    items = []
+    xml = http_get(src["url"], cfg)
+    root = ET.fromstring(xml)
+    ns = {"rss": "http://purl.org/rss/1.0/", "dc": "http://purl.org/dc/elements/1.1/"}
+    # RSS1.0(RDF)では <item> は RDF直下の兄弟要素。名前空間付きで全item検索。
+    for it in root.findall(".//rss:item", ns):
+        title = text_of(it.find("rss:title", ns))
+        link = text_of(it.find("rss:link", ns))
+        pub = parse_iso(text_of(it.find("dc:date", ns)))
+        desc = strip_html(text_of(it.find("rss:description", ns)))
+        items.append(_mk_item(src, title, link, pub, desc))
+    return items
+
+
 FETCHERS = {
     "atom": fetch_atom,
     "changelog": fetch_changelog,
@@ -379,6 +397,7 @@ FETCHERS = {
     "rsshub": fetch_rsshub,
     "qiita": fetch_qiita,
     "note": fetch_note,
+    "hatena": fetch_hatena,           # はてブ検索＝日本語サイト横断の活用術ネット
 }
 
 
@@ -685,13 +704,20 @@ def _mymemory_translate(text, cfg):
 #  並べ替え・重複排除
 # ===========================================================================
 def dedupe(items):
-    """URL単位で重複排除（先勝ち）。"""
-    seen, out = set(), []
+    """URL単位で重複排除（先勝ち）。さらに『同一タイトル＋媒体』も重複とみなす。
+    ★Googleニュースは検索クエリ毎にリダイレクトURLが変わり、同じ記事が別URLになるため、
+      複数の検索ソースをまたいだ同一記事の二重掲載をこの第2キーで防ぐ。"""
+    seen_url, seen_title, out = set(), set(), []
     for it in items:
-        key = it["url"] or (it["source_id"] + "|" + it["title_orig"])
-        if key in seen:
+        ukey = it["url"] or (it["source_id"] + "|" + it["title_orig"])
+        tkey = ((it.get("title_orig") or "").strip().lower(), (it.get("media") or "").strip().lower())
+        if ukey in seen_url:
             continue
-        seen.add(key)
+        if tkey[0] and tkey in seen_title:
+            continue
+        seen_url.add(ukey)
+        if tkey[0]:
+            seen_title.add(tkey)
         out.append(it)
     return out
 

@@ -83,6 +83,26 @@
       "note": "非公式検索API。取得失敗時は自動スキップ。"
     },
     {
+      "id": "hatena",
+      "name": "はてなブックマーク検索",
+      "short_name": "はてブ",
+      "kind": "記事・ブログ",
+      "type": "hatena",
+      "url": "https://b.hatena.ne.jp/search/text?q=Claude%20Code&mode=rss&sort=recent&users=1&safe=on",
+      "enabled": true,
+      "note": "サイト横断の日本語技術記事ネット（個人/企業ブログ等もここで拾う）。レート制限(429)で失敗する日は自動スキップ。usersを上げると人気記事に寄る。"
+    },
+    {
+      "id": "news_ja_usage",
+      "name": "ニュース検索 (日本語・活用術)",
+      "short_name": "ニュース(活用)",
+      "kind": "記事・ブログ",
+      "type": "googlenews",
+      "url": "https://news.google.com/rss/search?q=%22Claude%20Code%22%20(%E4%BD%BF%E3%81%84%E6%96%B9%20OR%20%E6%B4%BB%E7%94%A8%20OR%20%E5%85%A5%E9%96%80%20OR%20Tips)&hl=ja&gl=JP&ceid=JP:ja",
+      "enabled": true,
+      "note": "Qiita/Zenn/note以外の日本語サイト(各社テックブログ・メディア等)の活用術記事を横断的に拾う。"
+    },
+    {
       "id": "reddit",
       "name": "Reddit r/ClaudeAI",
       "short_name": "Reddit",
