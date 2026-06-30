@@ -168,7 +168,10 @@
     "release_bonus": 2,
     "bug_terms": ["bug", "crash", "broken", "not working", "doesn't work", "error", "fails", "issue with", "バグ", "エラー", "不具合", "落ちる", "動かない", "直らない", "できない"],
     "bug_penalty": 3,
-    "version_only_penalty": 5
+    "version_only_penalty": 5,
+    "deprioritize_terms": ["システム開発", "アプリ開発", "アプリを開発", "ゲーム開発", "個人開発", "開発記", "開発してみた", "作ってみた", "作りました", "作った話", "を作る", "を作っ", "自作", "i built", "we built", "building a", "building an", "built a", "built an", "i made", "from scratch", "side project", "app development", "game development"],
+    "deprioritize_penalty": 3,
+    "_note_deprioritize": "『Claude Codeで○○を作った』系=システム開発がテーマの記事を減点して順位を下げる（除外ではない）。使い方Tips記事は影響を受けにくい。語の調整で強弱を変えられる。"
   },
   "recommend": {
     "total": 12,

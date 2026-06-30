@@ -471,6 +471,11 @@ def score_item(item, cfg):
         if kw.lower() in hay:
             score -= prof.get("bug_penalty", 0)
             break
+    # 「○○を作った」系＝システム開発がテーマの記事は優先度を下げる（除外ではない）
+    for kw in prof.get("deprioritize_terms", []):
+        if kw.lower() in hay:
+            score -= prof.get("deprioritize_penalty", 0)
+            break
     # バージョン番号だけのリリースは減点
     if is_version_only(item):
         score -= prof.get("version_only_penalty", 0)
