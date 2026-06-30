@@ -471,11 +471,6 @@ def score_item(item, cfg):
         if kw.lower() in hay:
             score -= prof.get("bug_penalty", 0)
             break
-    # 「○○を作った」系＝システム開発がテーマの記事は優先度を下げる（除外ではない）
-    for kw in prof.get("deprioritize_terms", []):
-        if kw.lower() in hay:
-            score -= prof.get("deprioritize_penalty", 0)
-            break
     # バージョン番号だけのリリースは減点
     if is_version_only(item):
         score -= prof.get("version_only_penalty", 0)
@@ -499,8 +494,11 @@ def pick_recommendations(items, cfg):
     max_ver = rc.get("max_version_only", 3)
 
     # おすすめ枠から除外するkind（既定: 公式リリース＝英語・長文のため）。一覧には残る。
+    # exclude_themes: おすすめTOPに入れないテーマ（システム開発は別枠扱いでTOPから外す）。
     exclude_kinds = set(rc.get("exclude_kinds", []))
-    pool_items = [x for x in items if x["kind"] not in exclude_kinds]
+    exclude_themes = set(rc.get("exclude_themes", []))
+    pool_items = [x for x in items
+                  if x["kind"] not in exclude_kinds and x["theme"] not in exclude_themes]
     by_score = sorted(pool_items, key=lambda x: x["score"], reverse=True)
     chosen, chosen_urls = [], set()
     ver_count = [0]  # クロージャから更新するためリストで保持
