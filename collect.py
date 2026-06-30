@@ -889,6 +889,7 @@ def send_email(recommended, items, cfg, force=False):
 THEME_COLOR = {
     "新機能・更新": "#00A08E",
     "使い方・Tips": "#0A7A5C",
+    "システム開発": "#6B7AA1",
     "事例・体験談": "#FFC000",
     "周辺・エコシステム": "#0A7A5C",
     "その他": "#7a8a86",
@@ -1245,7 +1246,7 @@ function cardHTML(it, reco){
   const r = isRead(it.url);
   const title = it.title_ja || it.title;
   const summ = it.summary_ja || it.summary || "";
-  const themeColor = { "新機能・更新":"#00A08E","使い方・Tips":"#0A7A5C","事例・体験談":"#FFC000","周辺・エコシステム":"#0A7A5C","その他":"#7a8a86" }[it.theme] || "#0A7A5C";
+  const themeColor = { "新機能・更新":"#00A08E","使い方・Tips":"#0A7A5C","システム開発":"#6B7AA1","事例・体験談":"#FFC000","周辺・エコシステム":"#0A7A5C","その他":"#7a8a86" }[it.theme] || "#0A7A5C";
   let badges = '<span class="badge kind">'+esc(it.kind)+'</span>';
   badges += '<span class="badge theme" style="background:'+themeColor+'">'+esc(it.theme)+'</span>';
   if(it.is_new) badges += '<span class="badge new">NEW</span>';
@@ -1318,6 +1319,16 @@ function fillSelect(id, values, label){
 
 function init(data){
   DATA = data;
+  // ★メールと同じ思想で「すべての記事」を並べる:
+  //   システム開発テーマは別枠扱いで末尾へ → 役立ち度(score)の高い順 → 新しい順。
+  const DEPRIORITIZE = "システム開発";
+  DATA.items.sort((a,b)=>{
+    const sa = a.theme===DEPRIORITIZE?1:0, sb = b.theme===DEPRIORITIZE?1:0;
+    if(sa!==sb) return sa-sb;
+    const da=(a.score||0), db=(b.score||0);
+    if(da!==db) return db-da;
+    return (new Date(b.published||0)) - (new Date(a.published||0));
+  });
   fillSelect("f-theme", data.themes||[]);
   fillSelect("f-kind", data.kinds||[]);
   // おすすめ
