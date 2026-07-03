@@ -452,6 +452,14 @@ def is_version_only(item):
     return bool(VERSION_ONLY_RE.match(t))
 
 
+_JP_RE = re.compile(r"[ぁ-んァ-ヶー一-龯]")  # ひらがな・カタカナ・漢字
+
+
+def _has_japanese(text):
+    """日本語文字を含むか。含まなければ英語＝海外記事とみなす。"""
+    return bool(_JP_RE.search(text or ""))
+
+
 def score_item(item, cfg):
     themes = cfg["themes"]
     prof = cfg["interest_profile"]
@@ -474,6 +482,9 @@ def score_item(item, cfg):
     # バージョン番号だけのリリースは減点
     if is_version_only(item):
         score -= prof.get("version_only_penalty", 0)
+    # ★海外（英語）記事は優先度を下げる（日本語を含まない＝海外扱い）。除外ではなく減点。
+    if not _has_japanese(item["title_orig"] + " " + item["summary"]):
+        score -= prof.get("overseas_penalty", 0)
     # コミュニティの外部スコア（Reddit/HNのupvote）を軽く反映
     ext = item.get("score_ext", 0) or 0
     if ext >= 50:
@@ -492,6 +503,7 @@ def pick_recommendations(items, cfg):
     from_new = rc.get("from_new", 4)
     from_tips = rc.get("from_tips", 4)
     max_ver = rc.get("max_version_only", 3)
+    max_per_source = rc.get("max_per_source", 0)  # 0=無制限。同一サイトの偏りを防ぐTOP上限。
 
     # おすすめ枠から除外するkind（既定: 公式リリース＝英語・長文のため）。一覧には残る。
     # exclude_themes: おすすめTOPに入れないテーマ（システム開発は別枠扱いでTOPから外す）。
@@ -502,22 +514,34 @@ def pick_recommendations(items, cfg):
     by_score = sorted(pool_items, key=lambda x: x["score"], reverse=True)
     chosen, chosen_urls = [], set()
     ver_count = [0]  # クロージャから更新するためリストで保持
+    src_count = {}   # source_id別の採用数（幅広いサイトから選ぶための偏り防止）
+
+    def can_take(it):
+        if it["url"] in chosen_urls or it["score"] <= 0:
+            return False
+        # ★同一サイトの本数を制限＝特定サイトへの偏りを防ぐ
+        if max_per_source and src_count.get(it["source_id"], 0) >= max_per_source:
+            return False
+        # ★バージョン番号だけのリリースはおすすめ枠を専有しないよう上限
+        if is_version_only(it) and ver_count[0] >= max_ver:
+            return False
+        return True
+
+    def commit(it):
+        chosen.append(it)
+        chosen_urls.add(it["url"])
+        src_count[it["source_id"]] = src_count.get(it["source_id"], 0) + 1
+        if is_version_only(it):
+            ver_count[0] += 1
 
     def take(pool, limit):
         n = 0
         for it in pool:
             if n >= limit:
                 break
-            if it["url"] in chosen_urls or it["score"] <= 0:
-                continue
-            # ★バージョン番号だけのリリースはおすすめ枠を専有しないよう上限を設ける
-            if is_version_only(it):
-                if ver_count[0] >= max_ver:
-                    continue
-                ver_count[0] += 1
-            chosen.append(it)
-            chosen_urls.add(it["url"])
-            n += 1
+            if can_take(it):
+                commit(it)
+                n += 1
 
     take([x for x in by_score if x["theme"] == "新機能・更新"], from_new)
     take([x for x in by_score if x["theme"] == "使い方・Tips"], from_tips)
@@ -525,14 +549,8 @@ def pick_recommendations(items, cfg):
     for it in by_score:
         if len(chosen) >= total:
             break
-        if it["url"] in chosen_urls or it["score"] <= 0:
-            continue
-        if is_version_only(it) and ver_count[0] >= max_ver:
-            continue
-        if is_version_only(it):
-            ver_count[0] += 1
-        chosen.append(it)
-        chosen_urls.add(it["url"])
+        if can_take(it):
+            commit(it)
 
     chosen.sort(key=lambda x: x["score"], reverse=True)
     for it in chosen:
