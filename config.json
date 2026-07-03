@@ -170,7 +170,7 @@
   "interest_profile": {
     "notable_terms": ["subagent", "sub-agent", "mcp", "hook", "plugin", "skill", "claude.md", "workflow", "team", "enterprise", "sdk", "opus", "sonnet", "haiku", "security", "自動化", "チーム", "レビュー", "セキュリティ", "エージェント"],
     "notable_score": 2,
-    "release_bonus": 2,
+    "release_bonus": 4,
     "bug_terms": ["bug", "crash", "broken", "not working", "doesn't work", "error", "fails", "issue with", "バグ", "エラー", "不具合", "落ちる", "動かない", "直らない", "できない"],
     "bug_penalty": 3,
     "version_only_penalty": 5,
@@ -183,7 +183,7 @@
     "from_tips": 8,
     "max_version_only": 1,
     "max_per_source": 3,
-    "exclude_kinds": ["公式リリース"],
+    "exclude_kinds": [],
     "exclude_themes": ["システム開発"],
     "_note_max_per_source": "おすすめTOPに同一サイトを最大N件まで＝特定サイトへの偏りを防ぎ幅広いサイトから選ぶ。"
   },
@@ -212,7 +212,8 @@
     "include_categories": true,
     "per_theme_max": 12,
     "category_themes": ["使い方・Tips", "事例・体験談", "新機能・更新", "システム開発"],
-    "exclude_kinds": ["公式リリース"],
-    "_note_focus": "メールは『効果的な使い方』中心。category_themes=メールに出すテーマ(この順)。exclude_kinds=メールのカテゴリから外す種別(バージョンだけの公式リリース等)。収集・サイトは全件のまま。"
+    "exclude_kinds": [],
+    "exclude_version_only": true,
+    "_note_focus": "メールは『効果的な使い方』中心。category_themes=メールに出すテーマ(この順)。exclude_version_only=番号だけのバージョンバンプ(v2.1.x)は一覧から除外し、中身ある公式リリース(CHANGELOG等)は新機能・更新に表示。収集・サイトは全件のまま。"
   }
 }

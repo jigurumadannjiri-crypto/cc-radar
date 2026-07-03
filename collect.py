@@ -483,7 +483,8 @@ def score_item(item, cfg):
     if is_version_only(item):
         score -= prof.get("version_only_penalty", 0)
     # ★海外（英語）記事は優先度を下げる（日本語を含まない＝海外扱い）。除外ではなく減点。
-    if not _has_japanese(item["title_orig"] + " " + item["summary"]):
+    #   ただし公式リリースは英語でも「海外ニュース」ではないので減点しない。
+    if item["kind"] != "公式リリース" and not _has_japanese(item["title_orig"] + " " + item["summary"]):
         score -= prof.get("overseas_penalty", 0)
     # コミュニティの外部スコア（Reddit/HNのupvote）を軽く反映
     ext = item.get("score_ext", 0) or 0
@@ -939,6 +940,7 @@ def _category_groups(recommended, items, cfg):
     per_max = em.get("per_theme_max", 8)
     only_themes = em.get("category_themes") or list(cfg["themes"].keys())
     skip_kinds = set(em.get("exclude_kinds", []))
+    skip_version_only = em.get("exclude_version_only", False)  # 番号だけのバージョンバンプを一覧から除外
     def usefulness_key(it):
         # 役立ち度(score)を最優先、同点は新しい順。
         p = parse_iso(it.get("published"))
@@ -951,7 +953,8 @@ def _category_groups(recommended, items, cfg):
         bucket = [it for it in items
                   if it["theme"] == theme
                   and it["url"] not in shown
-                  and it["kind"] not in skip_kinds]
+                  and it["kind"] not in skip_kinds
+                  and not (skip_version_only and is_version_only(it))]
         if bucket:
             # ★メールのカテゴリ一覧は「役に立ちそうな順」に並べる（日付順ではなくscore順）。
             bucket.sort(key=usefulness_key, reverse=True)
