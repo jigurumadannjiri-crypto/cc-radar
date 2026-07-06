@@ -99,13 +99,18 @@ jobs:
 
       # ↓ GitHub Pages 公開用（メールのみ運用なら、この2ステップと上の permissions/environment を削除）
       #   送信担当でない回(send=no)はサイト生成もしていないのでデプロイしない。
+      # ★continue-on-error: メール配信は前段で完了済み。Pagesデプロイは遅延cronが束ねて発火した際に
+      #   稀に競合で失敗するが、それでワークフロー全体を失敗扱い（＝失敗通知メール）にしない。
+      #   サイトは次回の成功実行で更新されればよい（メールが主役）。
       - name: Pages成果物をアップロード
         if: steps.claim.outputs.send != 'no'
+        continue-on-error: true
         uses: actions/upload-pages-artifact@v3
         with:
           path: docs
 
       - name: GitHub Pagesへデプロイ
         if: steps.claim.outputs.send != 'no'
+        continue-on-error: true
         id: deploy
         uses: actions/deploy-pages@v4
