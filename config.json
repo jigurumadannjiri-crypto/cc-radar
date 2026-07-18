@@ -202,6 +202,51 @@
     "max_items_to_enrich": 80,
     "summary_chars": 200
   },
+  "biz": {
+    "enabled": true,
+    "email_max": 2,
+    "max_age_days": 14,
+    "case": "進行中の営業支援AI案件",
+    "_note": "業務視点の在庫枠（メール専用セクション・サイトには載せない）。他業界・業界の動きを1〜2件だけ毎朝のメールに載せ、末尾に『あなたの案件だと◯◯』の引き写しを付ける。case=接続コメントに使う案件名。実名は公開リポジトリに載せず GitHub Secret CC_RADAR_BIZ_CASE で上書きする。接続コメントは ANTHROPIC_API_KEY があればAIが記事固有に生成、無ければ connect_template で代替。",
+    "exclude_title_terms": ["セミナー", "ウェビナー", "開催", "登壇", "申込", "募集", "EXPO", "展示会", "出展", "受賞", "カオスマップ", "求人", "転職", "補助金", "ランキング", "とは？", "とは何", "おすすめ", "を解説", "決算", "株価"],
+    "exclude_media": ["PR TIMES", "PRワイヤー", "PR Wire", "ドリームニュース", "@Press", "valuepress", "NEWSCAST", "PR EDGE"],
+    "hot_terms": ["事例", "導入", "削減", "効果", "変革", "成果", "実装", "刷新", "改革", "活用", "挑"],
+    "sources": [
+      {
+        "id": "biz_sales_dx",
+        "name": "業務在庫: 営業DX（他業界）",
+        "short_name": "営業DX",
+        "kind": "業務在庫",
+        "type": "googlenews",
+        "domain": "営業DX・他業界",
+        "url": "https://news.google.com/rss/search?q=%E5%96%B6%E6%A5%ADDX%20OR%20%E5%96%B6%E6%A5%AD%E6%94%B9%E9%9D%A9%20OR%20%E3%82%BB%E3%83%BC%E3%83%AB%E3%82%B9%E3%83%86%E3%83%83%E3%82%AF%20OR%20%22%E5%96%B6%E6%A5%AD%E6%94%AF%E6%8F%B4AI%22%20when%3A14d&hl=ja&gl=JP&ceid=JP:ja",
+        "connect_template": "あなたの案件だと：この打ち手を{case}に引き写すと、営業のどの動作が最初に変わるか？",
+        "enabled": true
+      },
+      {
+        "id": "biz_insurance",
+        "name": "業務在庫: 保険業界の動き",
+        "short_name": "保険業界",
+        "kind": "業務在庫",
+        "type": "googlenews",
+        "domain": "保険業界の動き",
+        "url": "https://news.google.com/rss/search?q=%28%E7%94%9F%E5%91%BD%E4%BF%9D%E9%99%BA%20OR%20%E4%BF%9D%E9%99%BA%E6%A5%AD%E7%95%8C%29%20%28AI%20OR%20DX%20OR%20%E3%83%87%E3%82%B8%E3%82%BF%E3%83%AB%29%20when%3A14d&hl=ja&gl=JP&ceid=JP:ja",
+        "connect_template": "あなたの案件だと：この動きが自社にも来たとき、{case}は追い風になるか、作り直しになるか？",
+        "enabled": true
+      },
+      {
+        "id": "biz_ai_mgmt",
+        "name": "業務在庫: AI×経営の実装",
+        "short_name": "AI×経営",
+        "kind": "業務在庫",
+        "type": "googlenews",
+        "domain": "AI×経営の実装",
+        "url": "https://news.google.com/rss/search?q=%E7%94%9F%E6%88%90AI%20%28%E7%B5%8C%E5%96%B6%20OR%20%E6%A5%AD%E5%8B%99%E6%94%B9%E9%9D%A9%20OR%20%E5%85%A8%E7%A4%BE%20OR%20%E5%B0%8E%E5%85%A5%E4%BA%8B%E4%BE%8B%29%20when%3A14d&hl=ja&gl=JP&ceid=JP:ja",
+        "connect_template": "あなたの案件だと：この会社の展開ステップに{case}を当てはめると、いま何合目か？",
+        "enabled": true
+      }
+    ]
+  },
   "email": {
     "enabled": true,
     "smtp_host": "smtp.gmail.com",

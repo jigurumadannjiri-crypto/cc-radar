@@ -53,6 +53,9 @@ HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
 # ★多重cron（朝に4回発火）でも実際に送るのは1日1回だけにするための要。
 STATE_DIR = os.path.join(HERE, "state")
 LAST_SENT_PATH = os.path.join(STATE_DIR, "last_sent.txt")
+# 業務在庫（メール専用セクション）で掲載済みの記事URL。翌日以降の再掲を防ぐ。
+# クラウドではワークフローの「業務在庫の掲載履歴を保存」ステップがcommit/pushして翌日と共有する。
+BIZ_FEATURED_PATH = os.path.join(STATE_DIR, "biz_featured.json")
 
 ATOM_NS = {"a": "http://www.w3.org/2005/Atom"}
 
@@ -822,6 +825,179 @@ def render_html(cfg):
 
 
 # ===========================================================================
+#  業務在庫（業務視点の在庫枠・メール専用セクション）
+#  他業界の営業DX／保険業界動向／AI×経営を1〜2件だけ毎朝のメールに載せ、
+#  末尾に「あなたの案件だと◯◯」の引き写しコメントを必ず付ける。
+#  ★サイト(docs/data.json)には載せない＝メンバー共有サイトはClaude Code情報専用のまま。
+# ===========================================================================
+def collect_biz(cfg):
+    """業務在庫ソース（config.biz.sources）から収集。本体のFETCHERSを再利用。"""
+    biz = cfg.get("biz", {})
+    items = []
+    for src in biz.get("sources", []):
+        if not src.get("enabled", True):
+            continue
+        fetcher = FETCHERS.get(src["type"])
+        if not fetcher:
+            continue
+        try:
+            got = fetcher(src, cfg)[: cfg.get("max_items_per_feed", 25)]
+            for it in got:
+                it["domain"] = src.get("domain", "")
+                it["connect_template"] = src.get("connect_template", "")
+            items.extend(got)
+            log(f"  - {src['name']}: {len(got)}件")
+        except Exception as e:
+            log(f"    [warn] {src['name']} 取得失敗（スキップ）: {e}")
+    return dedupe(items)
+
+
+def _load_biz_featured():
+    try:
+        with open(BIZ_FEATURED_PATH, encoding="utf-8") as f:
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _mark_biz_featured(picked):
+    """メール送信成功後に掲載URLを記録（翌日以降の再掲防止）。90日より古い記録は掃除。"""
+    if not picked:
+        return
+    d = _load_biz_featured()
+    today = jst_today_str()
+    for it in picked:
+        d[it["url"]] = today
+    limit = (dt.date.fromisoformat(today) - dt.timedelta(days=90)).isoformat()
+    d = {u: day for u, day in d.items() if day >= limit}
+    os.makedirs(STATE_DIR, exist_ok=True)
+    with open(BIZ_FEATURED_PATH, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False, indent=1)
+
+
+def _is_biz_noise(item, biz):
+    """告知・PR系のノイズ除外。日本語でない記事も外す（在庫枠は日本語ニュース前提）。"""
+    title = item["title_orig"]
+    if not _has_japanese(title):
+        return True
+    if any(t in title for t in biz.get("exclude_title_terms", [])):
+        return True
+    media = item.get("media", "") or ""
+    if any(m.lower() in media.lower() for m in biz.get("exclude_media", []) if m):
+        return True
+    return False
+
+
+def pick_biz(items, cfg):
+    """1〜2件を選定。鮮度＋実質語（事例・削減等）でスコアし、ドメインを日替わりで
+    ローテーションして偏りを防ぐ。掲載済みURL（biz_featured.json）は除外。"""
+    biz = cfg.get("biz", {})
+    featured = _load_biz_featured()
+    now = dt.datetime.now(dt.timezone.utc)
+    max_age = biz.get("max_age_days", 14)
+    hot = biz.get("hot_terms", [])
+    cand = []
+    for it in items:
+        if it["url"] in featured or _is_biz_noise(it, biz):
+            continue
+        p = parse_iso(it["published"])
+        if p is None:
+            continue
+        age = (now - p.astimezone(dt.timezone.utc)).days
+        if age > max_age:
+            continue
+        s = sum(2 for t in hot if t in it["title_orig"])
+        s += 3 if age <= 1 else (2 if age <= 3 else (1 if age <= 7 else 0))
+        it["biz_score"] = s
+        cand.append(it)
+
+    def rank_key(x):
+        p = parse_iso(x["published"])
+        return (x["biz_score"], p.timestamp() if p else 0)
+
+    domains = []
+    for src in biz.get("sources", []):
+        d = src.get("domain")
+        if d and d not in domains:
+            domains.append(d)
+    email_max = biz.get("email_max", 2)
+    picked, picked_urls = [], set()
+    # 日替わりで先頭ドメインを回す＝毎日同じ領域に偏らない
+    start = dt.date.today().toordinal() % len(domains) if domains else 0
+    for k in range(len(domains)):
+        if len(picked) >= email_max:
+            break
+        dom = domains[(start + k) % len(domains)]
+        pool = sorted([x for x in cand if x["domain"] == dom and x["url"] not in picked_urls],
+                      key=rank_key, reverse=True)
+        if pool:
+            picked.append(pool[0])
+            picked_urls.add(pool[0]["url"])
+    # 空きスロットはドメイン不問の上位で埋める（1件も無い日を減らす）
+    for x in sorted(cand, key=rank_key, reverse=True):
+        if len(picked) >= email_max:
+            break
+        if x["url"] not in picked_urls:
+            picked.append(x)
+            picked_urls.add(x["url"])
+    return picked
+
+
+def attach_biz_connect(picked, cfg):
+    """各件に「あなたの案件だと◯◯」の引き写しコメントを必ず付ける（在庫訓練の核）。
+    ANTHROPIC_API_KEY があればAIが記事固有に生成、無ければドメイン別テンプレートで代替。
+    案件の実名は公開リポジトリに載せないよう Secret CC_RADAR_BIZ_CASE から注入する。"""
+    if not picked:
+        return
+    case = (os.environ.get("CC_RADAR_BIZ_CASE") or cfg.get("biz", {}).get("case") or "進行中の案件").strip()
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if api_key and cfg.get("ai", {}).get("enabled"):
+        try:
+            _ai_biz_connect(picked, cfg, api_key, case)
+        except Exception as e:
+            log(f"  [warn] 業務在庫のAI接続コメント失敗（テンプレートで代替）: {e}")
+    for it in picked:
+        if not it.get("connect"):
+            tpl = it.get("connect_template") or "あなたの案件だと：この記事の一番の仕掛けを{case}に置き換えると何になるか？"
+            it["connect"] = tpl.replace("{case}", case)
+
+
+def _ai_biz_connect(picked, cfg, api_key, case):
+    ai = cfg["ai"]
+    payload = [
+        {"i": i, "domain": it.get("domain", ""), "title": it["title_orig"][:200], "summary": it["summary"][:400]}
+        for i, it in enumerate(picked)
+    ]
+    prompt = (
+        "あなたは法人営業×AIのプロダクト責任者を鍛える思考トレーナーです。"
+        "各記事について、読者の進行中案件（" + case + "）への引き写しの一言を返してください。"
+        "書式は必ず「あなたの案件だと：〜」で始まる1文（60〜90字）。"
+        "記事固有の仕掛け・数字・工夫を1つだけ拾い、案件の具体的な機能や営業動作につなげる。"
+        "「AI活用が重要」のような一般論は禁止。\n"
+        "出力は必ずJSON配列のみ。各要素は {\"i\":番号, \"connect\":\"...\"}。前置きや```は不要。\n\n入力:\n"
+        + json.dumps(payload, ensure_ascii=False)
+    )
+    body = json.dumps(
+        {"model": ai["model"], "max_tokens": 1000, "messages": [{"role": "user", "content": prompt}]}
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        ai["endpoint"],
+        data=body,
+        headers={"content-type": "application/json", "x-api-key": api_key,
+                 "anthropic-version": ai["anthropic_version"]},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=cfg["fetch"]["timeout_sec"] + 30, context=ssl_context()) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+    for obj in _extract_json_array(text):
+        idx = obj.get("i")
+        if isinstance(idx, int) and 0 <= idx < len(picked) and obj.get("connect"):
+            picked[idx]["connect"] = obj["connect"].strip()
+
+
+# ===========================================================================
 #  メール送信（任意。Gmail SMTP / STARTTLS / 587）
 # ===========================================================================
 def jst_today_str():
@@ -845,7 +1021,7 @@ def mark_sent_today():
         f.write(jst_today_str() + "\n")
 
 
-def send_email(recommended, items, cfg, force=False):
+def send_email(recommended, items, biz_picked, cfg, force=False):
     em = cfg.get("email", {})
     user = os.environ.get("CC_RADAR_GMAIL_USER")
     passwd = os.environ.get("CC_RADAR_GMAIL_PASS")
@@ -882,12 +1058,12 @@ def send_email(recommended, items, cfg, force=False):
     today = dt.date.today().strftime("%Y-%m-%d")
     subject = f'{em.get("subject_prefix", "[cc-radar]")} Claude Code 最新情報 {today}'
 
-    body = _email_html(recommended[:top_n], items, cfg)
+    body = _email_html(recommended[:top_n], items, biz_picked, cfg)
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = user
     msg["To"] = ", ".join(recipients)
-    msg.attach(MIMEText(_email_text(recommended[:top_n], items, cfg), "plain", "utf-8"))
+    msg.attach(MIMEText(_email_text(recommended[:top_n], items, biz_picked, cfg), "plain", "utf-8"))
     msg.attach(MIMEText(body, "html", "utf-8"))
 
     try:
@@ -897,6 +1073,8 @@ def send_email(recommended, items, cfg, force=False):
             server.login(user, passwd)
             server.sendmail(user, recipients, msg.as_string())
         log(f"  [ok] メール送信完了 → {len(recipients)}件の宛先: {', '.join(recipients)}")
+        # 業務在庫の掲載履歴を記録（送信成功時のみ＝未達の日の記事は翌日また候補に残る）
+        _mark_biz_featured(biz_picked)
         # CIでは workflow が送信権取得時に既にマーカーをpush済み → ここでは触らない。
         # ローカル実行（CC_RADAR_SEND 環境変数なし）のときだけ従来どおりマーカーを刻む。
         if os.environ.get("CC_RADAR_SEND") is None:
@@ -962,11 +1140,31 @@ def _category_groups(recommended, items, cfg):
     return groups
 
 
-def _email_text(recommended, items, cfg):
+def _biz_summary_text(it):
+    """業務在庫カードに出す要約。Googleニュースのdescriptionはタイトルの繰り返しが
+    ほとんどなので、タイトルと重複する場合は出さない（空文字を返す）。"""
+    summ = (it.get("summary_ja") or it.get("summary") or "").strip()
+    if not summ or len(summ) < 30:
+        return ""
+    if summ.startswith(it["title_orig"][:15]):
+        return ""
+    return summ[:120]
+
+
+def _email_text(recommended, items, biz_picked, cfg):
     lines = ["Claude Code 最新情報 (cc-radar)", "", "■ 本日のおすすめ"]
     for i, it in enumerate(recommended, 1):
         lines.append(f"{i}. [{it['theme']}] {display_title(it)}")
         lines.append(f"   {it['url']}")
+    if biz_picked:
+        lines.append("")
+        lines.append("■ 業務の視点在庫（他業界・業界の動きを自分の案件に引き写す枠）")
+        for it in biz_picked:
+            d = email_reldate(it["published"])
+            meta = " ".join(x for x in [it.get("media") or it["source_short"], d] if x)
+            lines.append(f"・[{it['domain']}] {display_title(it)}（{meta}）")
+            lines.append(f"   {it['url']}")
+            lines.append(f"   → {it.get('connect', '')}")
     if cfg.get("email", {}).get("include_categories", True):
         for theme, total, lst in _category_groups(recommended, items, cfg):
             lines.append("")
@@ -981,7 +1179,7 @@ def _email_text(recommended, items, cfg):
     return "\n".join(lines)
 
 
-def _email_html(recommended, items, cfg):
+def _email_html(recommended, items, biz_picked, cfg):
     cards = []
     for i, it in enumerate(recommended, 1):
         color = THEME_COLOR.get(it["theme"], "#00A08E")
@@ -992,6 +1190,28 @@ def _email_html(recommended, items, cfg):
             f'<a href="{html.escape(it["url"])}" style="color:#0A7A5C;font-weight:bold;font-size:15px;text-decoration:none;">{i}. {html.escape(display_title(it))}</a>'
             f'<div style="font-size:13px;color:#444;margin-top:4px;">{summ}</div>'
             f"</div>"
+        )
+
+    # 業務の視点在庫（黄アクセントの専用カード。おすすめの直後＝読む習慣の動線上に置く）
+    bizsec = ""
+    if biz_picked:
+        rows = []
+        for it in biz_picked:
+            d = email_reldate(it["published"])
+            meta = " ・ ".join(x for x in [html.escape(it.get("media") or it["source_short"]), html.escape(d)] if x)
+            summ = html.escape(_biz_summary_text(it))
+            rows.append(
+                '<div style="margin:0 0 12px;padding:11px 14px;border-left:4px solid #FFC000;background:#FFFBEE;border-radius:4px;">'
+                f'<div style="font-size:12px;color:#9a6a00;font-weight:bold;">{html.escape(it["domain"])} ・ {meta}</div>'
+                f'<a href="{html.escape(it["url"])}" style="color:#0A7A5C;font-weight:bold;font-size:15px;text-decoration:none;">{html.escape(display_title(it))}</a>'
+                + (f'<div style="font-size:12px;color:#666;margin-top:3px;">{summ}</div>' if summ else "")
+                + f'<div style="font-size:13px;color:#7a5500;margin-top:6px;font-weight:bold;">→ {html.escape(it.get("connect", ""))}</div>'
+                "</div>"
+            )
+        bizsec = (
+            '<h2 style="color:#9a6a00;font-size:17px;border-bottom:1px solid #f0e2b6;padding-bottom:4px;margin-top:26px;">'
+            '💼 業務の視点在庫 <span style="font-size:12px;color:#999;font-weight:normal;">他業界・業界の動きを自分の案件に引き写す枠</span></h2>'
+            + "".join(rows)
         )
 
     cats = ""
@@ -1027,6 +1247,7 @@ def _email_html(recommended, items, cfg):
         f'<h2 style="color:#00A08E;border-bottom:2px solid #FFC000;padding-bottom:6px;">Claude Code 最新情報</h2>'
         f'<p style="color:#666;font-size:13px;">本日のおすすめTOP{len(recommended)}＋テーマ別一覧（全{len(items)}件収集）</p>'
         + "".join(cards)
+        + bizsec
         + cats
         + f'<div style="margin-top:22px;text-align:center;">{btn}</div>'
         + '<p style="color:#999;font-size:11px;margin-top:20px;">— cc-radar 自動配信</p>'
@@ -1075,19 +1296,19 @@ def main():
         cfg = json.load(f)
 
     # 1) 収集
-    log("[1/5] 収集源から取得")
+    log("[1/6] 収集源から取得")
     items = collect_all(cfg)
     items = dedupe(items)
     log(f"  重複排除後: {len(items)}件")
 
     # 2) 分類（AIなし時の暫定。AIありなら後で上書きされ得る）
-    log("[2/5] 分類（kind × theme）")
+    log("[2/6] 分類（kind × theme）")
     for it in items:
         if not it["theme"]:
             it["theme"] = classify_theme(it, cfg["themes"])
 
     # 3) AI翻訳・要約（任意）
-    log("[3/5] 翻訳・要約")
+    log("[3/6] 翻訳・要約")
     enrich(items, cfg)
     # AIでthemeが付かなかったものを補完
     for it in items:
@@ -1095,7 +1316,7 @@ def main():
             it["theme"] = classify_theme(it, cfg["themes"])
 
     # 4) スコア・並べ替え・おすすめ
-    log("[4/5] スコアリング・並べ替え")
+    log("[4/6] スコアリング・並べ替え")
     for it in items:
         score_item(it, cfg)
     items = sort_items(items)
@@ -1103,19 +1324,36 @@ def main():
     recommended = pick_recommendations(items, cfg)
     log(f"  おすすめ: {len(recommended)}件")
 
+    # 5) 業務在庫（業務視点の在庫枠・メール専用。失敗しても本体配信は止めない）
+    log("[5/6] 業務在庫（メール専用セクション）")
+    biz_picked = []
+    if cfg.get("biz", {}).get("enabled"):
+        try:
+            biz_items = collect_biz(cfg)
+            biz_picked = pick_biz(biz_items, cfg)
+            attach_biz_connect(biz_picked, cfg)
+            for b in biz_picked:
+                log(f"  ★ ({b['biz_score']}pt)[{b['domain']}] {display_title(b)}")
+                log(f"      → {b.get('connect', '')}")
+        except Exception as e:
+            log(f"  [warn] 業務在庫の処理失敗（セクションなしで配信続行）: {e}")
+            biz_picked = []
+    else:
+        log("  [info] 無効（config.biz.enabled=false）")
+
     if dry_run:
         log("[dry-run] 出力なし。おすすめ一覧:")
         for i, it in enumerate(recommended, 1):
             log(f"  {i}. ({it['score']}pt)[{it['theme']}] {display_title(it)}")
             log(f"      {it['url']}")
-        log(f"\n  収集合計: {len(items)}件")
+        log(f"\n  収集合計: {len(items)}件 / 業務在庫: {len(biz_picked)}件")
         return
 
-    # 5) 出力＋メール
-    log("[5/5] HTML/JSON生成" + ("" if no_mail else " ＋ メール送信"))
+    # 6) 出力＋メール
+    log("[6/6] HTML/JSON生成" + ("" if no_mail else " ＋ メール送信"))
     write_outputs(items, recommended, cfg)
     if not no_mail:
-        send_email(recommended, items, cfg, force=force_mail)
+        send_email(recommended, items, biz_picked, cfg, force=force_mail)
 
     log("-" * 60)
     log(f"完了。公開URL: {cfg['public_url']}")

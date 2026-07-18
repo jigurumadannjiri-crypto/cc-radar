@@ -94,8 +94,25 @@ jobs:
           CC_RADAR_GMAIL_USER: ${{ secrets.CC_RADAR_GMAIL_USER }}  # 任意：Gmail通知
           CC_RADAR_GMAIL_PASS: ${{ secrets.CC_RADAR_GMAIL_PASS }}  # 任意：アプリパスワード
           CC_RADAR_MAIL_TO: ${{ secrets.CC_RADAR_MAIL_TO }}        # 任意：追加宛先（会社アドレス等）
+          CC_RADAR_BIZ_CASE: ${{ secrets.CC_RADAR_BIZ_CASE }}      # 任意：業務在庫の接続コメントに使う案件名（実名は公開リポに載せずSecretで）
           CC_RADAR_SEND: ${{ steps.claim.outputs.send }}           # yes=送る / force=手動で必ず送る
         run: python collect.py
+
+      # ★業務在庫（メール専用セクション）の掲載済みURLを保存 → 翌日以降の同一記事の再掲を防ぐ。
+      #   メールは前段で送信済みなので失敗しても全体は落とさない（履歴が残らないと翌日重複し得るだけ）。
+      #   concurrency で直列化されているため claim ステップの push と競合しない。
+      - name: 業務在庫の掲載履歴を保存
+        if: steps.claim.outputs.send != 'no'
+        continue-on-error: true
+        run: |
+          git add state/biz_featured.json 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "掲載履歴の変更なし"
+          else
+            git commit -m "chore: 業務在庫の掲載履歴を更新 [skip ci]"
+            git pull --rebase --autostash origin main || true
+            git push || true
+          fi
 
       # ↓ GitHub Pages 公開用（メールのみ運用なら、この2ステップと上の permissions/environment を削除）
       #   送信担当でない回(send=no)はサイト生成もしていないのでデプロイしない。
